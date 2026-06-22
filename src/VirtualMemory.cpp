@@ -3,6 +3,19 @@
 #include "VirtualMemory.h"
 #include "MemoryConstants.h"
 
+struct TraversalContext {
+    uint64_t page_swapped_in;
+    word_t protected_frame;
+
+    word_t max_frame = 0;
+    word_t empty_table_frame = 0;
+    uint64_t parent_entry_of_empty = 0;
+
+    uint64_t page_to_evict = 0;
+    word_t frame_of_evicted = 0;
+    uint64_t parent_entry_of_evicted = 0;
+    uint64_t max_dist = 0; 
+};
 /*
  * Initialize the virtual memory
  */
@@ -12,12 +25,48 @@ void VMinitialize(){
     }
 
 }
+static void traverseTree(word_t current_frame, 
+                         int depth, 
+                         uint64_t virtual_page, 
+                         uint64_t parent_entry_addr, 
+                         TraversalContext& ){
+    if (!root){
+        return;
+    }     
+    for(int i=0;i<TABLES_DEPTH;++i){
+        
+    }
+    traverseTree(root.left, max_frame, empty_table_frame, page_to_evict  );
+    traverseTree(root.right, max_frame, empty_table_frame, page_to_evict  );
+
+}
 
 /* Finds an available physical frame (either an empty table or an unused frame).
  * Returns the frame index, or 0 if an eviction is required.
  */
-static word_t findEmptyFrame(...) { ... }
+static word_t findEmptyFrame(word_t protected_frame) {
+    TraversalContext scan_results;
+    scan_results.protected_frame = protected_frame;
+    scan_results.page_to_evict = 0; 
 
+    traverseTree(0, 0, 0, 0, scan_results);
+
+    //first option: finding an emply table
+    if (scan_results.frame_of_evicted != 0) {
+        // מנתקים את הטבלה הריקה מההורה שלה
+        PMwrite(scan_results.emptys_parent, 0);
+        return scan_results.frame_of_evicted;
+    }
+
+    // עדיפות 2: יש פריים פנוי שטרם שומש במערכת (הבא בתור ברצף)
+    if (scan_results.highestUsedFrameIndex + 1 < NUM_FRAMES) {
+        return scan_results.highestUsedFrameIndex + 1;
+    }
+
+    // עדיפות 3: הזיכרון מלא, אין ברירה וחייבים לבצע פינוי (Eviction)
+    return 0; 
+
+}
 
 /* Evicts a page using the maximal cyclical distance algorithm.
  * Removes its reference from the parent table and returns the freed frame index.
