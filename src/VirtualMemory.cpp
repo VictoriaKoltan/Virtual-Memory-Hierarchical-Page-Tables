@@ -1,13 +1,13 @@
-#pragma once
+#pragma oncefirst_unused_frame
 #include "PhysicalMemory.h"
 #include "VirtualMemory.h"
 #include "MemoryConstants.h"
 
 struct TraversalContext {
-    uint64_t page_swapped_in;
+    uint64_t page_to_add;
     word_t protected_frame;
 
-    word_t max_frame = 0;
+    word_t first_unused_frame = 0;
     word_t empty_table_frame = 0;
     uint64_t emptys_parent = 0;
 
@@ -36,8 +36,9 @@ static void traverseTree(word_t current_frame,
     for(int i=0;i<TABLES_DEPTH;++i){
         
     }
-    traverseTree(root.left, max_frame, empty_table_frame, page_to_evict  );
-    traverseTree(root.right, max_frame, empty_table_frame, page_to_evict  );
+    //להחזיר +1 בבאחרון הפנןי
+    traverseTree(root.left, first_unused_frame, empty_table_frame, page_to_evict  );
+    traverseTree(root.right, first_unused_frame, empty_table_frame, page_to_evict  );
 
 }
 
@@ -51,20 +52,19 @@ static word_t findEmptyFrame(word_t protected_frame) {
 
     traverseTree(0, 0, 0, 0, scan_results);
 
-    //first option: finding a zeros frame
+    //first option: finding a zeros frame that once was in use
     if (scan_results.frame_of_evicted != 0) {
-        // מנתקים את הטבלה הריקה מההורה שלה
-        //
+        //disconnect the frame form its past parent
         PMwrite(scan_results.emptys_parent, 0);
         return scan_results.frame_of_evicted;
     }
 
     //second option: finding the next empty frame
-    if (scan_results.highestUsedFrameIndex + 1 < NUM_FRAMES) {
-        return scan_results.highestUsedFrameIndex + 1;
+    if (scan_results.first_unused_frame < NUM_FRAMES) {
+        return scan_results.first_unused_frame;
     }
 
-    // עדיפות 3: הזיכרון מלא, אין ברירה וחייבים לבצע פינוי (Eviction)
+    //third option: physical memory is full, we need to find a victim
     return 0; 
 
 }
@@ -72,7 +72,22 @@ static word_t findEmptyFrame(word_t protected_frame) {
 /* Evicts a page using the maximal cyclical distance algorithm.
  * Removes its reference from the parent table and returns the freed frame index.
  */
-static word_t evictPage(...) { ... }
+static word_t evictPage(uint64_t page_to_add, word_t protected_frame) {
+    TraversalContext scan_results;
+    scan_results.protected_frame = protected_frame;
+    scan_results.page_to_add = page_to_add;
+
+    // מפעילים את הסורק שימצא את הדף המרוחק ביותר
+    traverseTree(0, 0, 0, 0, scan_results);
+
+    // שומרים את הדף המפונה בדיסק (Swap Out)
+    PMevict(scan_results.frame_of_evicted, scan_results.page_to_evict);
+
+    // מנתקים אותו מההורה שלו בעזרת הכתובת הישירה
+    PMwrite(scan_results.parent_entry_of_evicted, 0);
+
+    return scan_results.frame_of_evicted;
+}
 
 
 /* Resolves a page fault by allocating a frame (finding empty or evicting).
@@ -83,6 +98,10 @@ static word_t handlePageFault(uint64_t virtualPage) {
     // 2. אם אין, בצע פינוי בעזרת evictPage
     // 3. חבר את המסגרת החדשה לעץ הטבלאות
     // 4. החזר את מספר המסגרת שהוקצתה
+    TraversalContext scan_results;
+    if (findEmptyFrame(scan_results.protected_frame)==0){
+        evictPage(scan_results.page_to_add, scan_results.protected_frame);
+    }
 }
 
 /* Returns the physical frame index that virtualPage currently maps to,
@@ -152,19 +171,3 @@ int VMwrite(uint64_t virtualAddress, word_t value){
 }
 
 
-static word_t evictPage(uint64_t page_swapped_in, word_t frame_to_protect) {
-    TraversalContext ctx;
-    ctx.frame_to_protect = frame_to_protect;
-    ctx.page_swapped_in = page_swapped_in;
-
-    // מפעילים את הסורק שימצא את הדף המרוחק ביותר
-    traverseTree(0, 0, 0, 0, ctx);
-
-    // שומרים את הדף המפונה בדיסק (Swap Out)
-    PMevict(ctx.frame_of_evicted, ctx.page_to_evict);
-
-    // מנתקים אותו מההורה שלו בעזרת הכתובת הישירה
-    PMwrite(ctx.parent_entry_of_evicted, 0);
-
-    return ctx.frame_of_evicted;
-}
