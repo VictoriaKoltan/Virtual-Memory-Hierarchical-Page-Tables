@@ -9,7 +9,7 @@ struct TraversalContext {
 
     word_t max_frame = 0;
     word_t empty_table_frame = 0;
-    uint64_t parent_entry_of_empty = 0;
+    uint64_t emptys_parent = 0;
 
     uint64_t page_to_evict = 0;
     word_t frame_of_evicted = 0;
@@ -51,14 +51,15 @@ static word_t findEmptyFrame(word_t protected_frame) {
 
     traverseTree(0, 0, 0, 0, scan_results);
 
-    //first option: finding an emply table
+    //first option: finding a zeros frame
     if (scan_results.frame_of_evicted != 0) {
         // מנתקים את הטבלה הריקה מההורה שלה
+        //
         PMwrite(scan_results.emptys_parent, 0);
         return scan_results.frame_of_evicted;
     }
 
-    // עדיפות 2: יש פריים פנוי שטרם שומש במערכת (הבא בתור ברצף)
+    //second option: finding the next empty frame
     if (scan_results.highestUsedFrameIndex + 1 < NUM_FRAMES) {
         return scan_results.highestUsedFrameIndex + 1;
     }
@@ -151,3 +152,19 @@ int VMwrite(uint64_t virtualAddress, word_t value){
 }
 
 
+static word_t evictPage(uint64_t page_swapped_in, word_t frame_to_protect) {
+    TraversalContext ctx;
+    ctx.frame_to_protect = frame_to_protect;
+    ctx.page_swapped_in = page_swapped_in;
+
+    // מפעילים את הסורק שימצא את הדף המרוחק ביותר
+    traverseTree(0, 0, 0, 0, ctx);
+
+    // שומרים את הדף המפונה בדיסק (Swap Out)
+    PMevict(ctx.frame_of_evicted, ctx.page_to_evict);
+
+    // מנתקים אותו מההורה שלו בעזרת הכתובת הישירה
+    PMwrite(ctx.parent_entry_of_evicted, 0);
+
+    return ctx.frame_of_evicted;
+}
